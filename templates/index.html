@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tidal 音乐搜索</title>
+    <script src="https://lf3-cdn-tos.bytecdntp.com/cdn/expire-1-M/vue/3.2.31/vue.global.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/opencc-js@1.0.5/dist/umd/full.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-image: url('https://source.unsplash.com/random/1920x1080/?music');
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            overflow: auto;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            flex: 1;
+            width: 100%;
+            min-height: calc(100vh - 50px);
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 2.5em;
+            color: white;
+            text-align: center;
+            text-shadow: 2px 2px 4px black;
+            margin-bottom: 20px;
+        }
+        #footer {
+            width: 100%;
+            text-align: center;
+            font-size: 0.9em;
+            color: #ccc;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.6);
+            position: fixed;
+            bottom: 0;
+        }
+        #footer a {
+            color: #ccc;
+            text-decoration: none;
+        }
+        #footer a:hover {
+            color: #e0e0e0;
+            text-decoration: underline;
+        }
+        .quality-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 9999px;
+            font-weight: 600;
+        }
+        .quality-HI_RES_LOSSLESS { background-color: #f59e0b; color: white; }
+        .quality-HI_RES { background-color: #10b981; color: white; }
+        .quality-LOSSLESS { background-color: #3b82f6; color: white; }
+        .quality-HIGH { background-color: #6366f1; color: white; }
+        .quality-LOW { background-color: #6b7280; color: white; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="container">
+            <h1>Tidal 音乐搜索</h1>
+            <div class="relative py-3 sm:max-w-xl sm:mx-auto w-full px-4">
+                <div class="relative flex items-center space-x-4">
+                    <input v-model="searchQuery" @keyup.enter="searchMusic" type="text" 
+                           class="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent" 
+                           placeholder="输入歌曲名称搜索...">
+                    <button @click="toggleConverter" 
+                            class="min-w-[48px] px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 text-sm font-medium">
+                        {{ isTraditional ? '繁' : '简' }}
+                    </button>
+                    <select v-model="selectedQuality" 
+                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="HI_RES_LOSSLESS">Hi-Res Lossless</option>
+                        <option value="HI_RES">Hi-Res</option>
+                        <option value="LOSSLESS">Lossless</option>
+                        <option value="HIGH">High</option>
+                        <option value="LOW">Low</option>
+                    </select>
+                    <button @click="searchMusic" 
+                            class="min-w-[120px] px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                            :disabled="isSearching">
+                        <i class="fas fa-spinner fa-spin" v-if="isSearching"></i>
+                        <span>{{ isSearching ? '搜索中' : '搜索' }}</span>
+                    </button>
+                </div>
+
+                <div v-if="isSearching" class="mt-8 text-center">
+                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+                    <p class="mt-2 text-white">正在搜索前三条结果...</p>
+                </div>
+
+                <div v-if="!isSearching && musicList.length" class="mt-8">
+                    <div v-for="(item, index) in musicList" :key="index" class="bg-white rounded-lg shadow-md p-4 mb-4">
+                        <div class="flex items-center space-x-4">
+                            <img :src="item.coverUrl" alt="album cover" class="w-20 h-20 rounded-lg">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2">
+                                    <h2 class="text-xl font-semibold">{{ item.title }}</h2>
+                                    <span :class="['quality-badge', 'quality-' + item.audioQuality]">
+                                        {{ item.audioQuality }}
+                                    </span>
+                                </div>
+                                <p class="text-gray-600">{{ item.artist }}</p>
+                                <p class="text-sm text-gray-500" v-if="item.album">专辑: {{ item.album }}</p>
+                                <p class="text-sm text-gray-500">时长: {{ formatDuration(item.duration) }}</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex items-center space-x-4">
+                            <button @click="playMusic(item.id)" 
+                                    class="min-w-[80px] px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2" 
+                                    :disabled="isLoadingMusic">
+                                <i :class="['fas', currentPlayingId === item.id && isPlaying ? 'fa-pause' : 'fa-play']"></i>
+                                {{ currentPlayingId === item.id && isPlaying ? '暂停' : '播放' }}
+                            </button>
+                            <!-- 修改下载按钮 -->
+                            <button @click="downloadMusic(item)" 
+                                    class="min-w-[80px] px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    :disabled="isDownloading === item.id">
+                                <template v-if="isDownloading === item.id">
+                                    <i class="fas fa-spinner fa-spin"></i> 下载中...
+                                </template>
+                                <template v-else>
+                                    <i class="fas fa-download"></i> 下载
+                                </template>
+                            </button>
+                            <div v-if="currentPlayingId === item.id" class="flex-1 space-y-2">
+                                <!-- 进度条 -->
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-sm text-gray-500">{{ formatDuration(currentTime) }}</span>
+                                    <div class="flex-1 h-2 bg-gray-200 rounded-full cursor-pointer" 
+                                         @click="seekAudio($event)">
+                                        <div :style="{ width: playProgress + '%' }" 
+                                             class="h-full bg-blue-500 rounded-full"></div>
+                                    </div>
+                                    <span class="text-sm text-gray-500">{{ formatDuration(duration) }}</span>
+                                </div>
+                                <!-- 音量控制 -->
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-volume-up text-gray-500"></i>
+                                    <input type="range" min="0" max="100" v-model="volume" 
+                                           @input="setVolume" 
+                                           class="flex-1 h-2 bg-gray-200 rounded-full">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="footer">
+        <span>Copyright © <span id="year"></span> <a href="/">Tidal Music Search</a></span>
+    </div>
+
+    <script>
+        const { createApp, ref, onMounted, onUnmounted } = Vue
+        createApp({
+            setup() {
+                const searchQuery = ref('')
+                const selectedQuality = ref('LOSSLESS')
+                const isSearching = ref(false)
+                const isLoadingMusic = ref(false)
+                const isDownloading = ref(null)
+                const musicList = ref([])
+                const audioPlayer = ref(null)
+                const isPlaying = ref(false)
+                const playProgress = ref(0)
+                const currentPlayingId = ref(null)
+                const volume = ref(100)
+                const currentTime = ref(0)
+                const duration = ref(0)
+                const isTraditional = ref(false)
+                const converter = OpenCC.Converter({ from: 'cn', to: 'tw' })
+
+                const toggleConverter = () => {
+                    if (searchQuery.value) {
+                        const oldText = searchQuery.value
+                        const config = isTraditional.value ? { from: 'tw', to: 'cn' } : { from: 'cn', to: 'tw' }
+                        const newConverter = OpenCC.Converter(config)
+                        searchQuery.value = newConverter(searchQuery.value)  // 直接调用转换器函数
+                        
+                        // 显示转换效果
+                        if (oldText !== searchQuery.value) {
+                            const input = document.querySelector('input[type="text"]')
+                            const originalBg = input.style.backgroundColor
+                            input.style.backgroundColor = '#e2e8f0'
+                            setTimeout(() => {
+                                input.style.backgroundColor = originalBg
+                            }, 200)
+                        }
+                    }
+                    isTraditional.value = !isTraditional.value
+                }
+
+                const formatDuration = (seconds) => {
+                    const minutes = Math.floor(seconds / 60)
+                    const remainingSeconds = seconds % 60
+                    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
+                }
+
+                const searchMusic = async () => {
+                    if (!searchQuery.value.trim()) return
+
+                    isSearching.value = true
+                    musicList.value = []
+                    try {
+                        const response = await fetch(`/api/search/?s=${encodeURIComponent(searchQuery.value)}`)
+                        const data = await response.json()
+
+                        if (data.items && data.items.length > 0) {
+                            const processedItems = await Promise.all(data.items.map(async (item) => {
+                                const coverResponse = await fetch(`/api/cover/?id=${item.id}`)
+                                const coverData = await coverResponse.json()
+                                const coverUrl = coverData[0]?.['640'] || ''
+
+                                return {
+                                    id: item.id,
+                                    title: item.title,
+                                    artist: item.artist.name,
+                                    album: item.album.title,
+                                    duration: item.duration,
+                                    audioQuality: item.audioQuality,
+                                    coverUrl: coverUrl
+                                }
+                            }))
+                            musicList.value = processedItems
+                        }
+                    } catch (error) {
+                        console.error('搜索失败:', error)
+                        alert('搜索失败，请稍后重试。')
+                    } finally {
+                        isSearching.value = false
+                    }
+                }
+
+                const playMusic = async (id) => {
+                    if (isLoadingMusic.value) return
+
+                    if (currentPlayingId.value === id && audioPlayer.value) {
+                        togglePlay()
+                        return
+                    }
+
+                    isLoadingMusic.value = true
+                    try {
+                        const response = await fetch(`/api/track/?id=${id}&quality=${selectedQuality.value}`)
+                        const data = await response.json()
+
+                        if (data.originalTrackUrl) {  // 修改这里，使用 originalTrackUrl
+                            if (audioPlayer.value) {
+                                audioPlayer.value.pause()
+                            }
+                            const audioUrl = data.originalTrackUrl  // 修改这里，使用 originalTrackUrl
+                            audioPlayer.value = new Audio(audioUrl)
+                            audioPlayer.value.volume = volume.value / 100  // 设置初始音量
+                            audioPlayer.value.addEventListener('timeupdate', updateProgress)
+                            audioPlayer.value.addEventListener('ended', () => {
+                                isPlaying.value = false
+                                playProgress.value = 0
+                                currentTime.value = 0
+                            })
+                            audioPlayer.value.play()
+                            isPlaying.value = true
+                            currentPlayingId.value = id
+                        } else {
+                            alert('无法播放该音乐，可能需要付费或暂不可用。')
+                        }
+                    } catch (error) {
+                        console.error('播放失败:', error)
+                        alert('播放失败，请稍后重试。')
+                    } finally {
+                        isLoadingMusic.value = false
+                    }
+                }
+
+                const togglePlay = () => {
+                    if (!audioPlayer.value) return
+
+                    if (isPlaying.value) {
+                        audioPlayer.value.pause()
+                    } else {
+                        audioPlayer.value.play()
+                    }
+                    isPlaying.value = !isPlaying.value
+                }
+
+                const updateProgress = () => {
+                    if (!audioPlayer.value) return
+                    currentTime.value = Math.floor(audioPlayer.value.currentTime)
+                    duration.value = Math.floor(audioPlayer.value.duration)
+                    playProgress.value = (audioPlayer.value.currentTime / audioPlayer.value.duration) * 100
+                }
+
+                const seekAudio = (event) => {
+                    if (!audioPlayer.value) return
+
+                    const progressBar = event.currentTarget
+                    const clickPosition = event.offsetX
+                    const totalWidth = progressBar.offsetWidth
+                    const percentage = (clickPosition / totalWidth)
+                    const newTime = percentage * audioPlayer.value.duration
+
+                    audioPlayer.value.currentTime = newTime
+                }
+
+                const setVolume = () => {
+                    if (audioPlayer.value) {
+                        audioPlayer.value.volume = volume.value / 100
+                    }
+                }
+
+                onUnmounted(() => {
+                    if (audioPlayer.value) {
+                        audioPlayer.value.removeEventListener('timeupdate', updateProgress)
+                        audioPlayer.value.pause()
+                    }
+                })
+
+                // 在 setup() 函数中添加 downloadMusic 方法
+                const downloadMusic = async (item) => {
+                    if (isDownloading.value === item.id) return
+
+                    isDownloading.value = item.id
+                    try {
+                        const response = await fetch(`/api/track/?id=${item.id}&quality=${selectedQuality.value}`)
+                        const data = await response.json()
+
+                        if (data.originalTrackUrl) {
+                            // 获取音频文件的二进制数据
+                            const audioResponse = await fetch(data.originalTrackUrl)
+                            const audioBlob = await audioResponse.blob()
+
+                            // 从 URL 中提取文件扩展名
+                            const match = data.originalTrackUrl.match(/\.([^.?]+)\?/)
+                            const extension = match ? match[1] : 'mp3'
+
+                            // 创建下载链接
+                            const downloadUrl = window.URL.createObjectURL(audioBlob)
+                            const link = document.createElement('a')
+                            link.href = downloadUrl
+                            link.download = `${item.title} - ${item.artist}.${extension}`
+
+                            // 触发下载
+                            document.body.appendChild(link)
+                            link.click()
+
+                            // 清理
+                            document.body.removeChild(link)
+                            window.URL.revokeObjectURL(downloadUrl)
+                        } else {
+                            alert('无法下载该音乐，可能需要付费或暂不可用。')
+                        }
+                    } catch (error) {
+                        console.error('下载失败:', error)
+                        alert('下载失败，请稍后重试。')
+                    } finally {
+                        isDownloading.value = null
+                    }
+                }
+
+                return {
+                    searchQuery,
+                    selectedQuality,
+                    isSearching,
+                    isLoadingMusic,
+                    isDownloading,
+                    musicList,
+                    isPlaying,
+                    playProgress,
+                    currentPlayingId,
+                    volume,
+                    currentTime,
+                    duration,
+                    searchMusic,
+                    playMusic,
+                    downloadMusic,
+                    formatDuration,
+                    seekAudio,
+                    setVolume,
+                    isTraditional,
+                    toggleConverter,
+                }
+            }
+        }).mount('#app')
+
+        document.getElementById("year").textContent = new Date().getFullYear();
+    </script>
+</body>
+</html>
